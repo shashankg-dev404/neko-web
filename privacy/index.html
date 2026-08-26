@@ -202,7 +202,7 @@
                     <td>To analyse abuse patterns at a coarse level. We never log full IP addresses.</td>
                 </tr>
                 <tr>
-                    <td>Anonymous usage events (<code>app_open</code>, <code>list_view</code>, <code>details_view</code>, <code>smart_search_run</code>, <code>list_import_complete</code>)</td>
+                    <td>Anonymous usage events (a fixed allow-list covering app opens, screen visits, sign-in, list actions, discovery and forum actions — <a href="#8">enumerated in full in §8</a>)</td>
                     <td>Periodically during app use — see §8 for the full event list and what each contains</td>
                     <td>Aggregate product analytics. No personally identifiable information, no search query text, no title names — bucketed counts and success/error flags only.</td>
                 </tr>
@@ -215,7 +215,7 @@
             <li>We do <strong>not</strong> use third-party analytics SDKs (Google Analytics, Firebase Analytics, Mixpanel, Amplitude, etc.), tracking pixels, or advertising SDKs. The aggregate usage events described in §8 are written to our own Cloudflare backend, not to any third-party analytics service.</li>
             <li>We do <strong>not</strong> collect your advertising identifier, location, contact list, phone number, microphone, or camera data.</li>
             <li>We do <strong>not</strong> sell, share, or transfer any personal data to third parties for marketing or any other purpose.</li>
-            <li>We do <strong>not</strong> read or store the contents of your Smart Search queries — Smart Search runs entirely on your device using a downloaded AI model. The <code>smart_search_run</code> analytics event records only a bucketed result count (e.g., "1-5", "6-20") and a success flag; the query text itself is never sent.</li>
+            <li>We do <strong>not</strong> read or store the contents of any search you run — including recommendation search, mood shortcuts, and (in versions that had it) the on-device Smart Search. The corresponding analytics events record only a bucketed result count (e.g., "1-5", "6-20") and a success flag; the query text itself is never sent. Smart Search was removed from the app in August 2026 and ran entirely on your device for as long as it existed.</li>
             <li>We do <strong>not</strong> log full IP addresses on our backend.</li>
             <li>We do <strong>not</strong> collect any screenshots — there is no screenshot upload feature in this version of Neko.</li>
         </ul>
@@ -252,16 +252,61 @@
         <p>Neko itself <strong>does not</strong> receive, store, or share any video playback data with Google or any other party — the data flow is directly between the embedded YouTube player and Google's servers. Neko has no analytics hook on the trailer play action.</p>
         <p>If you do not want Google to receive this data, do not tap the Play button on a Coming Soon card. The rest of the app (browsing, tracking, reminders, smart search) works fully without ever invoking the YouTube embed.</p>
 
-        <h2>8. Anonymous Usage Analytics</h2>
-        <p>Neko sends a small set of anonymous usage events to its own <strong>Cloudflare Workers Analytics Engine</strong> to understand how the app is used in aggregate. This data is used only to inform product decisions (e.g., "is the smart search feature actually used?", "how many users complete a MAL import?") and is never sold, shared, or used to track you individually.</p>
-        <p>The events sent are limited to the following fixed allow-list — anything outside this list is silently dropped by the server:</p>
+        <h2 id="8">8. Anonymous Usage Analytics</h2>
+        <p>Neko sends a small set of anonymous usage events to its own <strong>Cloudflare Workers Analytics Engine</strong> to understand how the app is used in aggregate. This data is used only to inform product decisions (e.g., "does anyone use the forum?", "how many users complete a MyAnimeList import?", "which screens do signed-out users get stuck on?") and is never sold, shared, or used to track you individually.</p>
+        <p>The events sent are limited to the following fixed allow-list — anything outside this list is silently dropped by the server. Every value in brackets is a <strong>fixed category</strong> chosen from a short predefined set, never free text: no search queries, no anime or manga titles, no thread or comment contents, no usernames, and no identifiers that could point back to a specific piece of content you looked at.</p>
+
+        <p><strong>Opening and using the app</strong></p>
         <ul>
-            <li><code>app_open</code> — fired when you open the app. Deduplicated to at most once per hour per device, so foregrounding the app repeatedly does not send extra events.</li>
-            <li><code>list_view</code> — fired when you open your tracked-anime list screen. Deduplicated per app-launch session.</li>
-            <li><code>details_view</code> — fired when you open an anime or manga details screen. Deduplicated per app-launch session.</li>
-            <li><code>smart_search_run</code> — fired when you run a smart search. Includes a <strong>bucketed</strong> result count (one of: <code>0</code>, <code>1-5</code>, <code>6-20</code>, <code>21+</code>, <code>error</code>) and a success/error flag. <strong>Your actual search query text is never sent.</strong></li>
-            <li><code>list_import_complete</code> — fired when a MyAnimeList → AniList import finishes. Includes a bucketed list-size category (one of: <code>0</code>, <code>1-19</code>, <code>20-99</code>, <code>100-499</code>, <code>500+</code>) and a success/empty outcome.</li>
+            <li><code>app_open</code> — fired when you open the app. Deduplicated to at most once per hour per device, so foregrounding the app repeatedly does not send extra events. Records whether you are signed in.</li>
+            <li><code>app_resume</code> — fired when you return to the app after at least 30 minutes away. Records how long you were away as a coarse band (<code>30m-2h</code>, <code>2h-24h</code>, <code>1-7d</code>, <code>7d+</code>) and whether you are signed in.</li>
+            <li><code>screen_view</code> — fired the first time you reach a given screen in a session. Records the screen's internal route name (a fixed list, e.g. <code>HomeScreen</code>) and whether you are signed in. It records <em>which screen</em>, never what was on it.</li>
+            <li><code>onboarding_step</code> — which step of the first-run introduction you reached.</li>
         </ul>
+
+        <p><strong>Signing in</strong></p>
+        <ul>
+            <li><code>signin_prompt_view</code> — fired when a "sign in" prompt is actually shown to you. Records which surface showed it (e.g. <code>home</code>, <code>forum</code>, <code>mylist</code>).</li>
+            <li><code>sign_in_start</code> — fired when you begin signing in. Records which prompt or screen you started from.</li>
+            <li><code>sign_in_complete</code> — fired when sign-in finishes successfully. Records nothing else; your AniList username is not sent.</li>
+            <li><code>signin_prompt_dismiss</code> — fired when you dismiss a sign-in prompt. Records which surface, and whether that dismissal was the one that stops us asking again.</li>
+            <li><code>gate_toast</code> — fired when you tap a control that needs an account and we explain why. Records which kind of action you were attempting (e.g. <code>likeThread</code>), so we can tell which features signed-out users actually want.</li>
+        </ul>
+
+        <p><strong>Your list</strong></p>
+        <ul>
+            <li><code>list_view</code> — fired when you open your list screen. Deduplicated per app-launch session.</li>
+            <li><code>details_view</code> — fired when you open an anime or manga details screen. Deduplicated per app-launch session. <strong>Which</strong> title you opened is not sent.</li>
+            <li><code>list_add</code> — fired when you add a title to your list. Records the entry point used and whether it was anime or manga.</li>
+            <li><code>list_progress_inc</code> — fired when you increment your progress from a list card. Records anime/manga, the control used, and whether that increment completed the series.</li>
+            <li><code>list_custom_use</code> — custom-list usage. Records the action (<code>available</code>, <code>view</code>, <code>assign</code>), anime/manga, and a count. Your custom list <em>names</em> are never sent.</li>
+            <li><code>list_import_complete</code> — fired when a MyAnimeList → AniList import finishes. Includes a bucketed list-size category (one of: <code>0</code>, <code>1-19</code>, <code>20-99</code>, <code>100-499</code>, <code>500+</code>) and a success/empty outcome.</li>
+            <li><code>list_export_complete</code> — fired when an export file is actually written to your device. Records the format (MyAnimeList XML or CSV) and a bucketed size. The file's contents never leave your device.</li>
+        </ul>
+
+        <p><strong>Discovery</strong></p>
+        <ul>
+            <li><code>rec_search_run</code> — fired when you run a recommendation search. Includes a <strong>bucketed</strong> result count (one of: <code>0</code>, <code>1-5</code>, <code>6-20</code>, <code>21+</code>), a success flag, anime/manga, and which entry point you used. <strong>Your actual search query text is never sent.</strong></li>
+            <li><code>mood_search_used</code> — fired when you use a mood shortcut. Records which mood and a bucketed result count.</li>
+            <li><code>for_you_view</code>, <code>for_you_tap</code>, <code>for_you_hide</code>, <code>for_you_not_interested</code> — how the personalised rows on Home are used: whether they were shown, which row was tapped, and which rows you turned off. The row is identified by its type (e.g. <code>airing</code>, <code>sequels</code>), never by the titles in it.</li>
+            <li><code>schedule_open</code> — fired when you open the airing schedule. Records which control you used to get there.</li>
+            <li><code>shared_taste_open</code> — fired when you open the "titles you both have" comparison from another user's profile. Records nothing else — not the other user, not the titles.</li>
+        </ul>
+
+        <p><strong>Forum</strong></p>
+        <ul>
+            <li><code>forum_thread_open</code> — fired when you open a forum thread. Records only <strong>which part of the app you came from</strong> (e.g. <code>board</code>, <code>following</code>, <code>details</code>). <strong>The thread's identity, title and contents are never sent.</strong></li>
+            <li><code>forum_engage</code> — fired when you successfully like, like a reply to, follow, reply to, or create a thread. Records only which of those five actions it was. <strong>No thread, comment, text or identity is sent.</strong></li>
+        </ul>
+
+        <p><strong>Notifications and reliability</strong></p>
+        <ul>
+            <li><code>subscription_created</code> — fired when you subscribe to alerts for a title. Which title is not sent here (the subscription itself is covered in §1.2).</li>
+            <li><code>notification_tap</code> — fired when you open a notification.</li>
+            <li><code>api_rate_limited</code> — fired when AniList or Jikan rate-limits one of our requests, so we can tell how often you are being slowed down. Records the service, the status code and which request type. Purely technical; contains nothing about you.</li>
+        </ul>
+
+        <p><strong>Retired events.</strong> Older versions of Neko sent <code>smart_search_run</code>, <code>smart_search_enabled</code>, <code>smart_search_ready</code> and <code>smart_search_query</code> for the on-device Smart Search feature. <strong>Smart Search was removed from the app in August 2026</strong> and newer versions send none of these. They remain on the server's allow-list only so that events from older installs, which are still supported, continue to be accepted rather than rejected. As before, no query text was ever sent by any of them — only a bucketed result count and a success flag.</p>
         <p>Each event is tagged with the same anonymous device identifier used for push notifications and feedback (see §1.2). The events are stored in Cloudflare Workers Analytics Engine for approximately <strong>30 days</strong>, after which they are auto-purged by Cloudflare's retention policy. We do not use Google Analytics, Firebase Analytics, Mixpanel, Amplitude, or any third-party analytics SDK — the analytics endpoint is on the same Cloudflare backend already described elsewhere in this policy.</p>
         <p>There is no in-app toggle to disable analytics in this version of Neko because the payload contains no personally identifiable information, no search query text, no title names, and is auto-purged within ~30 days. To stop sending events entirely, uninstall the app — uninstalling removes the anonymous device identifier and ends the data flow.</p>
 
